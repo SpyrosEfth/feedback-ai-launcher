@@ -89,6 +89,8 @@
             var attemptIntervalMs = 250;
             var hasLaunchSignal = false;
             var blurPendingTimer = null;
+            var focusWatchTimer = null;
+            var unfocusedSince = 0;
 
             function showFallback(message) {
                 if (spinner) {
@@ -173,6 +175,43 @@
                 }, maxAttemptWindowMs + 100);
             }
 
+            function startFocusWatch() {
+                if (focusWatchTimer) {
+                    return;
+                }
+
+                var startedAt = Date.now();
+                focusWatchTimer = setInterval(function () {
+                    if (window.closed || hasLaunchSignal) {
+                        clearInterval(focusWatchTimer);
+                        focusWatchTimer = null;
+                        return;
+                    }
+
+                    var elapsed = Date.now() - startedAt;
+                    if (elapsed > 12000) {
+                        clearInterval(focusWatchTimer);
+                        focusWatchTimer = null;
+                        return;
+                    }
+
+                    if (!document.hasFocus()) {
+                        if (!unfocusedSince) {
+                            unfocusedSince = Date.now();
+                            return;
+                        }
+
+                        // Treat sustained focus loss as a successful app handoff signal.
+                        if (Date.now() - unfocusedSince >= 1200) {
+                            beginCloseFlow();
+                        }
+                        return;
+                    }
+
+                    unfocusedSince = 0;
+                }, 250);
+            }
+
             if (closeBtn) {
                 closeBtn.addEventListener('click', function () {
                     tryCloseOnce();
@@ -203,6 +242,14 @@
                         beginCloseFlow();
                     }
                 }, 350);
+
+                if (!unfocusedSince) {
+                    unfocusedSince = Date.now();
+                }
+            });
+
+            window.addEventListener('focus', function () {
+                unfocusedSince = 0;
             });
 
             window.addEventListener('pagehide', function () {
@@ -211,6 +258,11 @@
 
             // Trigger the deep link to open the app.
             window.location.href = deepLink;
+
+            // Backup signal: monitor sustained focus loss for Chrome flows without visibility/pagehide changes.
+            setTimeout(function () {
+                startFocusWatch();
+            }, 700);
 
             setTimeout(function () {
                 if (!hasLaunchSignal && !window.closed) {
