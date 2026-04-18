@@ -81,6 +81,13 @@
             document.addEventListener('visibilitychange', function () {
                 if (document.visibilityState === 'hidden') {
                     window.close();
+                    // If close is blocked by the browser, show a friendly message
+                    setTimeout(function () {
+                        if (!window.closed) {
+                            document.querySelector('.spinner').style.display = 'none';
+                            document.querySelector('p').textContent = 'Application opened. You can close this tab.';
+                        }
+                    }, 500);
                 }
             });
 
