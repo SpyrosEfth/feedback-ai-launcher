@@ -85,7 +85,7 @@
 
             var closeStartedAt = 0;
             var closeAttemptTimer = null;
-            var maxAttemptWindowMs = 3500;
+            var maxAttemptWindowMs = 6000;
             var attemptIntervalMs = 250;
             var hasLaunchSignal = false;
 
@@ -193,12 +193,7 @@
             });
 
             window.addEventListener('blur', function () {
-                // Blur can be caused by the protocol permission dialog, so wait for hidden state.
-                setTimeout(function () {
-                    if (document.visibilityState === 'hidden') {
-                        beginCloseFlow();
-                    }
-                }, 120);
+                beginCloseFlow();
             });
 
             window.addEventListener('pagehide', function () {
@@ -207,6 +202,14 @@
 
             // Trigger the deep link to open the app.
             window.location.href = deepLink;
+
+            // Some Chrome flows do not emit clear visibility signals after protocol confirmation.
+            // Start a delayed close flow as fallback for those cases.
+            setTimeout(function () {
+                if (!hasLaunchSignal && !window.closed) {
+                    beginCloseFlow();
+                }
+            }, 1800);
 
             setTimeout(function () {
                 if (!hasLaunchSignal && !window.closed) {
