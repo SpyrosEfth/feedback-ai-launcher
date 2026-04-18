@@ -59,7 +59,8 @@
     <div class="card">
         <div class="spinner"></div>
         <h2>Feedback Report Tool</h2>
-        <p>Opening the application…</p>
+        <p id="status">Opening the application…</p>
+        <button id="close-btn" type="button" style="display: none; margin-top: 12px; padding: 8px 14px; border-radius: 6px; border: 1px solid #c1c7d0; background: #ffffff; color: #172b4d; cursor: pointer;">Close tab</button>
     </div>
 
     <script>
@@ -67,6 +68,9 @@
             var params = new URLSearchParams(window.location.search);
             var module = params.get('module') || 'home';
             var key = params.get('key') || '';
+            var spinner = document.querySelector('.spinner');
+            var status = document.getElementById('status');
+            var closeBtn = document.getElementById('close-btn');
 
             var deepLink;
             if (module === 'pfa') {
@@ -77,27 +81,106 @@
                 deepLink = 'virmed-rca://open?module=home';
             }
 
-            // Close when the app takes focus (user granted permission and app opened)
-            document.addEventListener('visibilitychange', function () {
-                if (document.visibilityState === 'hidden') {
+            var closeStartedAt = Date.now();
+            var closeAttemptTimer = null;
+            var maxAttemptWindowMs = 3500;
+            var attemptIntervalMs = 250;
+
+            function showFallback() {
+                if (spinner) {
+                    spinner.style.display = 'none';
+                }
+                if (status) {
+                    status.textContent = 'Application opened. You can close this tab.';
+                }
+                if (closeBtn) {
+                    closeBtn.style.display = 'inline-block';
+                }
+            }
+
+            function tryCloseOnce() {
+                try {
                     window.close();
-                    // If close is blocked by the browser, show a friendly message
+                } catch (e) {
+                    // Ignore and continue to fallback if closing remains blocked.
+                }
+            }
+
+            function attemptClose(reason) {
+                if (window.closed) {
+                    return;
+                }
+
+                tryCloseOnce();
+
+                if (window.closed) {
+                    return;
+                }
+
+                var elapsed = Date.now() - closeStartedAt;
+                if (elapsed >= maxAttemptWindowMs) {
+                    if (closeAttemptTimer) {
+                        clearInterval(closeAttemptTimer);
+                        closeAttemptTimer = null;
+                    }
+                    showFallback();
+                }
+            }
+
+            function startCloseRetries() {
+                if (closeAttemptTimer) {
+                    return;
+                }
+                closeAttemptTimer = setInterval(function () {
+                    attemptClose('retry');
+                }, attemptIntervalMs);
+            }
+
+            if (closeBtn) {
+                closeBtn.addEventListener('click', function () {
+                    tryCloseOnce();
                     setTimeout(function () {
                         if (!window.closed) {
-                            document.querySelector('.spinner').style.display = 'none';
-                            document.querySelector('p').textContent = 'Application opened. You can close this tab.';
+                            showFallback();
+                            if (status) {
+                                status.textContent = 'Chrome blocked automatic closing. Press Ctrl+W to close this tab.';
+                            }
                         }
-                    }, 500);
+                    }, 150);
+                });
+            }
+
+            document.addEventListener('visibilitychange', function () {
+                if (document.visibilityState === 'hidden') {
+                    attemptClose('visibilitychange');
                 }
             });
 
-            // Also close if user navigates away
-            window.addEventListener('pagehide', function () {
-                window.close();
+            window.addEventListener('blur', function () {
+                attemptClose('blur');
             });
 
-            // Trigger the deep link to open the app
+            window.addEventListener('pagehide', function () {
+                attemptClose('pagehide');
+            });
+
+            // Trigger the deep link to open the app, then attempt closure and retries.
             window.location.href = deepLink;
+
+            setTimeout(function () {
+                attemptClose('post-launch');
+                startCloseRetries();
+            }, 150);
+
+            setTimeout(function () {
+                if (!window.closed) {
+                    if (closeAttemptTimer) {
+                        clearInterval(closeAttemptTimer);
+                        closeAttemptTimer = null;
+                    }
+                    showFallback();
+                }
+            }, maxAttemptWindowMs + 100);
         })();
     </script>
 </body>
