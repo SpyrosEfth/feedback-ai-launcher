@@ -66,210 +66,89 @@
     </div>
 
     <script>
-        (function () {
-            var params = new URLSearchParams(window.location.search);
-            var module = params.get('module') || 'home';
-            var key = params.get('key') || '';
-            var spinner = document.querySelector('.spinner');
-            var status = document.getElementById('status');
-            var closeBtn = document.getElementById('close-btn');
-
-            var deepLink;
-            if (module === 'pfa') {
-                deepLink = 'virmed-rca://open?module=pfa&jsmTicketKey=' + encodeURIComponent(key);
-            } else if (module === 'rca') {
-                deepLink = 'virmed-rca://open?module=rca&jiraIssueKey=' + encodeURIComponent(key);
-            } else {
-                deepLink = 'virmed-rca://open?module=home';
+    (function () {
+        var params = new URLSearchParams(window.location.search);
+        var module = params.get('module') || 'home';
+        var key = params.get('key') || '';
+        var spinner = document.querySelector('.spinner');
+        var status = document.getElementById('status');
+        var closeBtn = document.getElementById('close-btn');
+    
+        var deepLink;
+        if (module === 'pfa') {
+            deepLink = 'virmed-rca://open?module=pfa&jsmTicketKey=' + encodeURIComponent(key);
+        } else if (module === 'rca') {
+            deepLink = 'virmed-rca://open?module=rca&jiraIssueKey=' + encodeURIComponent(key);
+        } else {
+            deepLink = 'virmed-rca://open?module=home';
+        }
+    
+        var closeStarted = false;
+    
+        function showFallback(message) {
+            if (spinner) spinner.style.display = 'none';
+            if (status) {
+                status.textContent = message || 'If the application opened, you can close this tab.';
             }
-
-            var closeStartedAt = 0;
-            var closeAttemptTimer = null;
-            var maxAttemptWindowMs = 4500;
-            var attemptIntervalMs = 250;
-            var hasLaunchSignal = false;
-            var blurPendingTimer = null;
-            var focusWatchTimer = null;
-            var unfocusedSince = 0;
-
-            function showFallback(message) {
-                if (spinner) {
-                    spinner.style.display = 'none';
-                }
-                if (status) {
-                    status.textContent = message || 'Application opened. You can close this tab.';
-                }
-                if (closeBtn) {
-                    closeBtn.style.display = 'inline-block';
-                }
-            }
-
-            function tryCloseOnce() {
-                try {
-                    window.close();
-                } catch (e) {
-                    // Ignore and continue to fallback if closing remains blocked.
-                }
-
-                // Chrome sometimes allows this variant when direct close is blocked.
-                if (!window.closed) {
-                    try {
-                        window.open('', '_self');
-                        window.close();
-                    } catch (e) {
-                        // Ignore and continue to fallback if still blocked.
-                    }
-                }
-            }
-
-            function attemptClose() {
-                if (window.closed) {
-                    return;
-                }
-
-                tryCloseOnce();
-
-                if (window.closed) {
-                    return;
-                }
-
-                if (!closeStartedAt) {
-                    return;
-                }
-
-                var elapsed = Date.now() - closeStartedAt;
-                if (elapsed >= maxAttemptWindowMs) {
-                    if (closeAttemptTimer) {
-                        clearInterval(closeAttemptTimer);
-                        closeAttemptTimer = null;
-                    }
-                    showFallback();
-                }
-            }
-
-            function startCloseRetries() {
-                if (closeAttemptTimer) {
-                    return;
-                }
-                closeAttemptTimer = setInterval(function () {
-                    attemptClose();
-                }, attemptIntervalMs);
-            }
-
-            function beginCloseFlow() {
-                if (hasLaunchSignal) {
-                    return;
-                }
-
-                hasLaunchSignal = true;
-                closeStartedAt = Date.now();
-                attemptClose();
-                startCloseRetries();
-
-                setTimeout(function () {
-                    if (!window.closed && closeAttemptTimer) {
-                        clearInterval(closeAttemptTimer);
-                        closeAttemptTimer = null;
-                        showFallback();
-                    }
-                }, maxAttemptWindowMs + 100);
-            }
-
-            function startFocusWatch() {
-                if (focusWatchTimer) {
-                    return;
-                }
-
-                var startedAt = Date.now();
-                focusWatchTimer = setInterval(function () {
-                    if (window.closed || hasLaunchSignal) {
-                        clearInterval(focusWatchTimer);
-                        focusWatchTimer = null;
-                        return;
-                    }
-
-                    var elapsed = Date.now() - startedAt;
-                    if (elapsed > 12000) {
-                        clearInterval(focusWatchTimer);
-                        focusWatchTimer = null;
-                        return;
-                    }
-
-                    if (!document.hasFocus()) {
-                        if (!unfocusedSince) {
-                            unfocusedSince = Date.now();
-                            return;
-                        }
-
-                        // Treat sustained focus loss as a successful app handoff signal.
-                        if (Date.now() - unfocusedSince >= 1200) {
-                            beginCloseFlow();
-                        }
-                        return;
-                    }
-
-                    unfocusedSince = 0;
-                }, 250);
-            }
-
             if (closeBtn) {
-                closeBtn.addEventListener('click', function () {
-                    tryCloseOnce();
-                    setTimeout(function () {
-                        if (!window.closed) {
-                            showFallback('Chrome blocked automatic closing. Press Ctrl+W to close this tab.');
-                            if (status) {
-                                status.textContent = 'Chrome blocked automatic closing. Press Ctrl+W to close this tab.';
-                            }
-                        }
-                    }, 150);
-                });
+                closeBtn.style.display = 'inline-block';
             }
-
-            document.addEventListener('visibilitychange', function () {
-                if (document.visibilityState === 'hidden') {
-                    beginCloseFlow();
-                }
-            });
-
-            window.addEventListener('blur', function () {
-                // A plain blur is not reliable; only proceed if the page becomes hidden shortly after.
-                if (blurPendingTimer) {
-                    clearTimeout(blurPendingTimer);
-                }
-                blurPendingTimer = setTimeout(function () {
-                    if (document.visibilityState === 'hidden') {
-                        beginCloseFlow();
+        }
+    
+        function tryCloseTab() {
+            try {
+                window.close();
+            } catch (e) {}
+    
+            if (!window.closed) {
+                try {
+                    window.open('', '_self');
+                    window.close();
+                } catch (e) {}
+            }
+    
+            if (!window.closed) {
+                showFallback('Application opened. You can close this tab.');
+            }
+        }
+    
+        function beginCloseFlow() {
+            if (closeStarted) return;
+            closeStarted = true;
+    
+            // Small delay so the browser/app handoff settles,
+            // but much faster than the current version.
+            setTimeout(tryCloseTab, 100);
+        }
+    
+        if (closeBtn) {
+            closeBtn.addEventListener('click', function () {
+                tryCloseTab();
+                setTimeout(function () {
+                    if (!window.closed && status) {
+                        status.textContent = 'Chrome blocked automatic closing. Press Ctrl+W to close this tab.';
                     }
-                }, 350);
-
-                if (!unfocusedSince) {
-                    unfocusedSince = Date.now();
-                }
+                }, 150);
             });
-
-            window.addEventListener('focus', function () {
-                unfocusedSince = 0;
-            });
-
-            window.addEventListener('pagehide', function () {
+        }
+    
+        // Only trust the page actually becoming hidden.
+        document.addEventListener('visibilitychange', function () {
+            if (document.visibilityState === 'hidden') {
                 beginCloseFlow();
-            });
-
-            // Trigger the deep link to open the app.
-            window.location.href = deepLink;
-
-            // Backup signal: monitor sustained focus loss for Chrome flows without visibility/pagehide changes.
-            setTimeout(function () {
-                startFocusWatch();
-            }, 700);
-
-            setTimeout(function () {
-                if (!hasLaunchSignal && !window.closed) {
-                    showFallback('If the application opened, you can close this tab.');
-                }
-            }, 4000);
-        })();
+            }
+        });
+    
+        // Trigger app launch
+        window.location.href = deepLink;
+    
+        // Fallback if nothing happens
+        setTimeout(function () {
+            if (!closeStarted && !window.closed) {
+                showFallback('If the application did not open, return to the previous page and try again.');
+            }
+        }, 3000);
+    })();
     </script>
 </body>
 
