@@ -97,13 +97,31 @@
             var closeRetryTimer = null;
             var blurCheckTimer = null;
 
+            // Only trust launch-related visibility/focus changes
+            // for a short period after opening the protocol link.
+            var launchDetectionArmed = true;
+            var launchDetectionWindowMs = 8000;
+
+            function disarmLaunchDetection() {
+                launchDetectionArmed = false;
+
+                if (blurCheckTimer) {
+                    clearTimeout(blurCheckTimer);
+                    blurCheckTimer = null;
+                }
+            }
+
+            setTimeout(disarmLaunchDetection, launchDetectionWindowMs);
+
             function showManualClose() {
                 if (spinner) {
                     spinner.style.display = 'none';
                 }
+
                 if (status) {
                     status.textContent = 'Application opened. You can close this tab.';
                 }
+
                 if (closeBtn) {
                     closeBtn.style.display = 'inline-block';
                 }
@@ -132,11 +150,10 @@
                 }
 
                 closeFlowStarted = true;
+                disarmLaunchDetection();
 
-                // Try immediately
                 tryCloseOnce();
 
-                // Retry quickly for a short time
                 var startedAt = Date.now();
                 closeRetryTimer = setInterval(function () {
                     if (window.closed) {
@@ -170,17 +187,18 @@
                 });
             }
 
-            // Strongest signal: page becomes hidden
             document.addEventListener('visibilitychange', function () {
+                if (!launchDetectionArmed || closeFlowStarted) {
+                    return;
+                }
+
                 if (document.visibilityState === 'hidden') {
                     startCloseFlow();
                 }
             });
 
-            // Secondary signal: browser/app switch caused a sustained focus loss.
-            // This avoids reacting to a very short blur.
             window.addEventListener('blur', function () {
-                if (closeFlowStarted) {
+                if (!launchDetectionArmed || closeFlowStarted) {
                     return;
                 }
 
@@ -189,6 +207,10 @@
                 }
 
                 blurCheckTimer = setTimeout(function () {
+                    if (!launchDetectionArmed || closeFlowStarted) {
+                        return;
+                    }
+
                     if (!document.hasFocus()) {
                         startCloseFlow();
                     }
@@ -202,13 +224,10 @@
                 }
             });
 
-            // Trigger the deep link
             window.location.href = deepLink;
 
-            // Important:
-            // No fallback timeout here.
-            // If the user does not click "Open Electron",
-            // the page stays in its initial state.
+            // No fallback text change.
+            // If user does nothing, page stays unchanged.
         })();
     </script>
 </body>
