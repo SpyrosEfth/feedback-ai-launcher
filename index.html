@@ -93,27 +93,27 @@
                 deepLink = 'virmed-rca://open?module=home';
             }
 
-            var closeStarted = false;
+            var closeFlowStarted = false;
+            var closeRetryTimer = null;
+            var blurCheckTimer = null;
 
-            function showFallback(message) {
+            function showManualClose() {
                 if (spinner) {
                     spinner.style.display = 'none';
                 }
-
                 if (status) {
-                    status.textContent = message || 'If the application opened, you can close this tab.';
+                    status.textContent = 'Application opened. You can close this tab.';
                 }
-
                 if (closeBtn) {
                     closeBtn.style.display = 'inline-block';
                 }
             }
 
-            function tryCloseTab() {
+            function tryCloseOnce() {
                 try {
                     window.close();
                 } catch (e) {
-                    // Ignore
+                    // ignore
                 }
 
                 if (!window.closed) {
@@ -121,31 +121,46 @@
                         window.open('', '_self');
                         window.close();
                     } catch (e) {
-                        // Ignore
+                        // ignore
                     }
-                }
-
-                if (!window.closed) {
-                    showFallback('Application opened. You can close this tab.');
                 }
             }
 
-            function beginCloseFlow() {
-                if (closeStarted) {
+            function startCloseFlow() {
+                if (closeFlowStarted) {
                     return;
                 }
 
-                closeStarted = true;
+                closeFlowStarted = true;
 
-                // Small delay to let browser/app handoff settle.
-                setTimeout(function () {
-                    tryCloseTab();
+                // Try immediately
+                tryCloseOnce();
+
+                // Retry quickly for a short time
+                var startedAt = Date.now();
+                closeRetryTimer = setInterval(function () {
+                    if (window.closed) {
+                        clearInterval(closeRetryTimer);
+                        closeRetryTimer = null;
+                        return;
+                    }
+
+                    tryCloseOnce();
+
+                    if (Date.now() - startedAt > 1200) {
+                        clearInterval(closeRetryTimer);
+                        closeRetryTimer = null;
+
+                        if (!window.closed) {
+                            showManualClose();
+                        }
+                    }
                 }, 100);
             }
 
             if (closeBtn) {
                 closeBtn.addEventListener('click', function () {
-                    tryCloseTab();
+                    tryCloseOnce();
 
                     setTimeout(function () {
                         if (!window.closed && status) {
@@ -155,22 +170,45 @@
                 });
             }
 
-            // Only close when the page actually becomes hidden.
+            // Strongest signal: page becomes hidden
             document.addEventListener('visibilitychange', function () {
                 if (document.visibilityState === 'hidden') {
-                    beginCloseFlow();
+                    startCloseFlow();
                 }
             });
 
-            // Trigger the deep link to open the desktop app.
+            // Secondary signal: browser/app switch caused a sustained focus loss.
+            // This avoids reacting to a very short blur.
+            window.addEventListener('blur', function () {
+                if (closeFlowStarted) {
+                    return;
+                }
+
+                if (blurCheckTimer) {
+                    clearTimeout(blurCheckTimer);
+                }
+
+                blurCheckTimer = setTimeout(function () {
+                    if (!document.hasFocus()) {
+                        startCloseFlow();
+                    }
+                }, 700);
+            });
+
+            window.addEventListener('focus', function () {
+                if (blurCheckTimer) {
+                    clearTimeout(blurCheckTimer);
+                    blurCheckTimer = null;
+                }
+            });
+
+            // Trigger the deep link
             window.location.href = deepLink;
 
-            // Fallback if launch did not happen.
-            setTimeout(function () {
-                if (!closeStarted && !window.closed) {
-                    showFallback('If the application did not open, return to the previous page and try again.');
-                }
-            }, 3000);
+            // Important:
+            // No fallback timeout here.
+            // If the user does not click "Open Electron",
+            // the page stays in its initial state.
         })();
     </script>
 </body>
